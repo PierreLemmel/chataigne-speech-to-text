@@ -1,2 +1,2 @@
-# chataigne-speedh-to-text
+# chataigne-speech-to-text
 A speech to text module for Chataigne

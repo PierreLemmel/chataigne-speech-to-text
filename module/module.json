@@ -1,0 +1,77 @@
+{
+    "name": "Speech to text",
+    "type": "OSC",
+    "path": "Transcription",
+    "version": "1.0.0",
+    "description": "Get transcription data from a microphone input",
+    "author": "Pierre Lemmel",
+    "hasInput": true,
+    "hasOutput": true,
+    "url": "https://github.com/PierreLemmel/chataigne-speech-to-text",
+    "downloadURL": "https://github.com/PierreLemmel/chataigne-speech-to-text/releases/download/Module/module-1.0.0.zip",
+
+    "hideDefaultParameters": [
+        "autoRange",
+        "autoFeedback",
+        "useHierarchy",
+        "colorSendMode",
+        "booleanSendMode",
+        "clearValues",
+        "pass_through"
+    ],
+    "defaults": {
+        "OSC Input": {
+			"localPort": 9000
+		},
+		"OSC Outputs": {
+			"OSC Output": {
+				"Remote port": 9001
+			}
+		}
+    },
+    "hideDefaultCommands": true,
+
+    "scripts": [
+        "speech-to-text.js"
+    ],
+
+    "parameters": {
+        "Transcription Running": {
+            "type": "Boolean",
+            "readOnly": true,
+            "default": false
+        },
+        "Start Transcription": {
+            "type": "Trigger"
+        },
+        "Stop Transcription": {
+            "type": "Trigger"
+        },
+        
+        "Transcription": {
+            "type": "Container",
+            
+            "Launch Script": {
+                "type": "File",
+                "default": "",
+                "description": "Path to the Transcription launch script (launch.bat)"
+            }
+        }
+    },
+
+    "values": {
+
+
+    },
+
+    "commands": {
+        "Start transcription": {
+            "menu": "",
+            "callback": "startTranscription"
+        },
+        "Stop transcription": {
+            "menu": "",
+            "callback": "stopTranscription"
+        }
+    }
+}

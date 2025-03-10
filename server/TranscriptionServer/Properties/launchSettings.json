@@ -1,0 +1,8 @@
+{
+  "profiles": {
+    "TranscriptionServer": {
+      "commandName": "Project",
+      "commandLineArgs": "-c \"..//..//..//service-account.json\" -p \"plml-351413\""
+    }
+  }
+}
