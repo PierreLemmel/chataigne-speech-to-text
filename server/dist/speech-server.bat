@@ -1,2 +1,2 @@
-%~dp0TranscriptionServer/dist/TranscriptionServer.exe %*
+%~dp0Server/TranscriptionServer.exe %*
 pause
