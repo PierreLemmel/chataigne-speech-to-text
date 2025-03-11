@@ -1,4 +1,5 @@
-﻿using System;
+﻿using Google.Api;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 
@@ -24,6 +25,17 @@ public static class Arrays
             Array.Copy(array, 0, result, destIdx, length);
             destIdx += length;
         }
+
+        return result;
+    }
+
+    public static TOut[] MapTo<TIn, TOut>(this TIn[] array, Func<TIn, TOut> predicate)
+    {
+        int length = array.Length;
+        TOut[] result = new TOut[length];
+
+        for(int i = 0; i < length; i++)
+            result[i] = predicate(array[i]);
 
         return result;
     }

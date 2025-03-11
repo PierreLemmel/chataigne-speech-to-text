@@ -2,6 +2,7 @@
 using Google.Cloud.Speech.V2;
 using Google.Protobuf;
 using Google.Protobuf.Collections;
+using Google.Protobuf.WellKnownTypes;
 using Grpc.Core;
 using NAudio.Wave;
 using System.Collections.Concurrent;
@@ -13,8 +14,8 @@ namespace TranscriptionServer;
 
 public class SpeechRecognizer : IDisposable
 {
-    private const double TimeoutFromWhichWeCanReset = 40.0;
-    private const double GoogleSpeechApiTimeout = 60.0;
+    private const double TimeoutFromWhichWeCanReset = 540.0;
+    private const double GoogleSpeechApiTimeout = 600.0;
 
     private enum RecognizerState
     {
@@ -290,17 +291,25 @@ public class SpeechRecognizer : IDisposable
 
         if (results.First().IsFinal)
         {
-            SpeechRecognitionAlternative alternative = results
+            SpeechRecognitionAlternative? alternative = results
                 .Single()
                 .Alternatives
-                .Single();
+                .SingleOrDefault();
+
+            if (alternative is null) return false;
 
             IReadOnlyCollection<Word> words = alternative
                 .Words
                 .Select(wordInfo =>
                 {
-                    TimeSpan wordStartTime = streamingCallBeginning + wordInfo.StartOffset.ToTimeSpan();
-                    TimeSpan wordEndTime = streamingCallBeginning + wordInfo.EndOffset.ToTimeSpan();
+                    TimeSpan wordStartTime = wordInfo.StartOffset is not null ?
+                        streamingCallBeginning + wordInfo.StartOffset.ToTimeSpan():
+                        streamingCallBeginning;
+
+                    TimeSpan wordEndTime = wordInfo.EndOffset is not null ? 
+                        streamingCallBeginning + wordInfo.EndOffset.ToTimeSpan():
+                        streamingCallBeginning;
+
                     string word = wordInfo.Word;
 
                     return new Word(wordStartTime, wordEndTime, word);

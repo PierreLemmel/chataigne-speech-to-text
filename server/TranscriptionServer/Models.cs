@@ -9,7 +9,7 @@ public record ElaboratingSentenceElement(string Transcript, bool IsStable);
 public record FinalizedSentence(Guid SentenceId, IReadOnlyCollection<Word> Words, float Confidence, TimeSpan StartTime, TimeSpan EndTime):
     SpeechSentence(SentenceId, StartTime);
 
-public record Word(TimeSpan StartTime, TimeSpan EndTime, string Transcript);
+public record Word(TimeSpan StartTime, TimeSpan? EndTime, string Transcript);
 
 public record SpeechSentence(Guid SentenceId, TimeSpan StartTime);
 

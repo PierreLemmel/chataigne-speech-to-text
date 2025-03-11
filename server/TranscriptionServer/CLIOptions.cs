@@ -18,4 +18,14 @@ public class CLIOptions
 
     [Option('r', "refresh", Required = false, Default = 30, HelpText = "Refresh rate in hz")]
     public int RefreshRate { get; set; }
+
+
+    [Option('o', "osc-out", Required = false, Default = 9000, HelpText = "Osc Output port")]
+    public int OscOut { get; set; }
+
+    [Option('i', "osc-in", Required = false, Default = 9001, HelpText = "Osc Input port")]
+    public int OscIn { get; set; }
+
+    [Option('a', "ip", Required = false, Default = "127.0.0.1", HelpText = "IP for OSC server and client.")]
+    public required string IPAddress { get; set; }
 }

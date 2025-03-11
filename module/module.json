@@ -47,6 +47,9 @@
         "Stop Transcription": {
             "type": "Trigger"
         },
+        "Clear values": {
+            "type": "Trigger"
+        },
         
         "Transcription": {
             "type": "Container",
@@ -55,12 +58,34 @@
                 "type": "File",
                 "default": "",
                 "description": "Path to the Transcription launch script (launch.bat)"
+            },
+
+            "Google Cloud Credentials": {
+                "type": "File",
+                "default": "",
+                "description": "Path to the Google Cloud credentials file (service-account.json). See https://console.cloud.google.com/projectselector2/iam-admin/serviceaccounts"
+            },
+
+            "Google Cloud Project ID": {
+                "type": "String",
+                "default": "project-id",
+                "description": "Google Cloud project ID"
+            },
+
+            "Microphone": {
+                "type": "Integer",
+                "default": 0,
+                "min": 0,
+                "description": "Index of the microphone to use for transcription. Index listing and hot reloading are not supported yet."
             }
         }
     },
 
     "values": {
 
+        "sentences": {
+            "type": "Container"
+        }
 
     },
 
@@ -72,6 +97,10 @@
         "Stop transcription": {
             "menu": "",
             "callback": "stopTranscription"
+        },
+        "Clear values": {
+            "menu": "",
+            "callback": "clearValues"
         }
     }
 }
