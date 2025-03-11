@@ -84,6 +84,7 @@ function startTranscription() {
     var credentials = local.parameters.transcription.googleCloudCredentials.get();
 
     var device = local.parameters.transcription.microphone.get();
+    var language = local.parameters.transcription.language.get();
 
     var args = [
         "--osc-in", oscOutput,
@@ -91,7 +92,8 @@ function startTranscription() {
         "--ip", oscIp,
         "--gcloud-project-id", gcloudId,
         "--credentials", credentials,
-        "--device", device
+        "--device", device,
+        "--language", language
     ].join(" ");
 
     script.log("Launching: '" + launchScript + " " + args + "'");
@@ -120,21 +122,29 @@ function oscEvent(address, args) {
         var startTime = args[0];
         createValueItem(id, startTime);
     }
-    if (address.startsWith("/transcription/elaborating/")) {
+    else if (address.startsWith("/transcription/elaborating/")) {
         
         var id = extractIdFromAddress(address);
         
         var stable = args[0];
         var unstable = args[1];
         var startTime = args[2];
-
+        
         var container = getValueItem(id, startTime);
-        logProperties(stableText);
-        logMethods(stableText);
+        var lastSentence = local.values.lastSentence;  
+
+        var wholeText = stable + " " + unstable;
+
         container.stableText.set(stable);
+        lastSentence.stableText.set(stable);
+        
         container.unstableText.set(unstable);
+        lastSentence.unstableText.set(unstable);
+
+        container.wholeText.set(wholeText);
+        lastSentence.wholeText.set(wholeText);
     }
-    if (address.startsWith("/transcription/finalized/")) {
+    else if (address.startsWith("/transcription/finalized/")) {
         
         var id = extractIdFromAddress(address);
         
@@ -143,11 +153,27 @@ function oscEvent(address, args) {
         var endTime = args[2];
 
         var container = getValueItem(id, startTime);
+        var lastSentence = local.values.lastSentence;
+
         container.finalized.set(true);
+        lastSentence.finalized.set(true);
+
         container.stableText.set(text);
+        lastSentence.stableText.set(text);
+
         container.unstableText.set("");
+        lastSentence.unstableText.set("");
+
+        container.wholeText.set(text);
+        lastSentence.wholeText.set(text);
 
         container.addFloatParameter("EndTime", "Sentence end time", endTime);
+    }
+    else if (address === "/audio/input-device") {
+        var index = args[0];
+        var name = args[1];
+
+        script.log(index + ": " + name);
     }
     else if (address === "/transcription/keepalive") {
         lastKeepAliveTime = util.getTime();
@@ -172,7 +198,7 @@ function extractIdFromAddress(address) {
 
 function createValueItem(id, startTime) {
 
-    var container = root.modules.speechToText.values.sentences.addContainer(nextIndex);
+    var container = local.values.sentences.addContainer(nextIndex);
     sentencesDic[id] = nextIndex;
 
     nextIndex++;
@@ -180,8 +206,15 @@ function createValueItem(id, startTime) {
     container.addStringParameter("Id", "Sentence Id", id);
     container.addFloatParameter("StartTime", "Sentence start time", startTime);
     container.addBoolParameter("Finalized", "Has sentence been finalized", false);
-    container.addStringParameter("Stable text", "Part of text that is stable", "");
-    container.addStringParameter("Unstable text", "Part of text that is stable", "");
+    
+    var stableParam = container.addStringParameter("Stable text", "Part of text that is stable", "");
+    stableParam.setAttribute("multiline", true);
+    
+    var unstableParam = container.addStringParameter("Unstable text", "Part of text that is stable", "");
+    unstableParam.setAttribute ("multiline", true);
+
+    var wholeTextParam = container.addStringParameter("Whole text", "Whole text (stable + unstable)", "");
+    wholeTextParam.setAttribute ("multiline", true);
 
     return container;
 }
@@ -190,18 +223,34 @@ function getValueItem(id, startTime) {
 
     var index = sentencesDic[id];
     if (index !== undefined) {
-        return root.modules.speechToText.values.sentences["" + index];
+        return local.values.sentences["" + index];
     }
     else {
+        var lastSentence = local.values.lastSentence;
+        lastSentence.id.set(id);
+        lastSentence.startTime.set(startTime);
+
         return createValueItem(id, startTime);
     }
 }
 
 function clearValues() {
-    root.modules.speechToText.values.removeContainer("sentences");
+    local.values.removeContainer("sentences");
     
-    root.modules.speechToText.values.addContainer("sentences");
+    local.values.addContainer("sentences");
 
     nextIndex = 0;
     sentencesDic = {};
+
+    resetLastSentence();
+}
+
+function resetLastSentence() {
+    var lastSentence = local.values.lastSentence;
+    lastSentence.id.set("");
+    lastSentence.startTime.set(0);
+    lastSentence.finalized.set(false);
+    lastSentence.stableText.set("");
+    lastSentence.unstableText.set("");
+    lastSentence.wholeText.set("");
 }

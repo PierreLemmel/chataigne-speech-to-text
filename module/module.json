@@ -54,6 +54,17 @@
         "Transcription": {
             "type": "Container",
             
+            "Language": {
+                "type":"Enum",
+                "options": {
+                    "French":"fr-fr",
+                    "English":"en-us",
+                    "Espanol": "es-es",
+                    "German": "de-de",
+                    "Italian": "it-it"
+                }
+            },
+
             "Launch Script": {
                 "type": "File",
                 "default": "",
@@ -85,6 +96,54 @@
 
         "sentences": {
             "type": "Container"
+        },
+
+        "lastSentence": {
+            "type": "Container",
+            "Id": {
+                "type": "String",
+                "readOnly": true,
+                "default": ""
+            },
+
+            "StartTime": {
+                "type": "Float",
+                "readOnly": true,
+                "default": 0
+            },
+
+            "Finalized": {
+                "type": "Boolean",
+                "readOnly": true,
+                "default": false
+            },
+
+            "Stable text": {
+                "type": "String",
+                "readOnly": true,
+                "default": "",
+                "multiline": true
+            },
+
+            "Unstable text": {
+                "type": "String",
+                "default": "",
+                "multiline": true,
+                "readOnly": true
+            },
+
+            "Whole text": {
+                "type": "String",
+                "default": "",
+                "multiline": true,
+                "readOnly": true
+            },
+
+            "EndTime": {
+                "type": "Float",
+                "readOnly": true,
+                "default": 0
+            }
         }
 
     },

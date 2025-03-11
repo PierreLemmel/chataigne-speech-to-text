@@ -1,4 +1,5 @@
 ﻿using CommandLine;
+using NAudio.Wave;
 using TranscriptionServer;
 using Vizcon.OSC;
 
@@ -17,7 +18,8 @@ internal class Program
                 Credentials: options.GoogleCredentials,
                 GcloudProjectId: options.GoogleCloudProjectId,
                 SampleRate: options.SampleRate,
-                Device: options.Device
+                Device: options.Device,
+                Language: options.Language
             );
 
             int oscIn = options.OscIn;
@@ -78,8 +80,9 @@ internal class Program
                         
                         string elaboratingMsgAddress = $"/transcription/elaborating/{id}";
 
-                        string stablePart = string.Join(" ", elts.Where(elt => elt.IsStable));
-                        string unstablePart = string.Join(" ", elts.Where(elt => !elt.IsStable));
+                        (var stableElts, var unstableElts) = elts.Split(elt => elt.IsStable);
+                        string stablePart = string.Join(" ", stableElts.Select(elt => elt.Transcript));
+                        string unstablePart = string.Join(" ", unstableElts.Select(elt => elt.Transcript));
 
                         sender.Send(new OscMessage(
                             $"/transcription/elaborating/{id}",
@@ -111,6 +114,17 @@ internal class Program
                 }
 
                 sender.Send(new OscMessage("/transcription/stopped"));
+            });
+
+            Task.Run(() =>
+            {
+                int deviceCount = WaveInEvent.DeviceCount;
+                for (int i=0; i < deviceCount; i++)
+                {
+                    WaveInCapabilities capabilities = WaveInEvent.GetCapabilities(i);
+
+                    sender.Send(new OscMessage("/audio/input-device", i, capabilities.ProductName));
+                }
             });
 #pragma warning restore CS4014
 

@@ -2,7 +2,7 @@
   "profiles": {
     "TranscriptionServer": {
       "commandName": "Project",
-      "commandLineArgs": "-c \"..//..//..//service-account.json\" -p \"plml-351413\""
+      "commandLineArgs": "-c \"..//..//..//service-account.json\" -p \"plml-351413\" -l \"fr-fr\""
     }
   }
 }

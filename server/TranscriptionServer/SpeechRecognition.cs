@@ -2,7 +2,6 @@
 using Google.Cloud.Speech.V2;
 using Google.Protobuf;
 using Google.Protobuf.Collections;
-using Google.Protobuf.WellKnownTypes;
 using Grpc.Core;
 using NAudio.Wave;
 using System.Collections.Concurrent;
@@ -14,21 +13,17 @@ namespace TranscriptionServer;
 
 public class SpeechRecognizer : IDisposable
 {
-    private const double TimeoutFromWhichWeCanReset = 540.0;
-    private const double GoogleSpeechApiTimeout = 600.0;
-
     private enum RecognizerState
     {
         Idle,
         Starting,
         Running,
         Stopping,
-        Restarting
     }
 
-    private readonly SpeechClient speech;
     private readonly IWaveIn waveIn;
     private readonly SpeechRecognizerOptions options;
+    private readonly SpeechClient.StreamingRecognizeStream streamingCall;
 
     private Stopwatch watch;
     private TimeSpan streamingCallBeginning;
@@ -37,24 +32,19 @@ public class SpeechRecognizer : IDisposable
     private Guid? currentRecognitionId = null;
     private TimeSpan? currentRecognitionStartingTime = null;
 
-    private SpeechClient.StreamingRecognizeStream? streamingCall;
 
-    private Task? startingTask;
-    private Task? mainTask;
-    private Task? stoppingTask;
-    private Task? restartingTask;
-
-    private object catchupLock = new();
-    private readonly ICollection<byte[]> catchupData = [];
     private readonly ConcurrentQueue<SpeechSentence> resultQueue;
+    private readonly string[] languages;
 
     private SpeechRecognizer(SpeechClient speech, IWaveIn waveIn, SpeechRecognizerOptions options)
     {
-        this.speech = speech;
         this.waveIn = waveIn;
         this.options = options;
+        this.streamingCall = speech.StreamingRecognize();
 
         resultQueue = new();
+
+        languages = [options.Language];
 
         watch = Stopwatch.StartNew();
     }
@@ -69,46 +59,18 @@ public class SpeechRecognizer : IDisposable
         waveIn.StartRecording();
 
         watch = Stopwatch.StartNew();
-        startingTask = Task.Run(CreateStartingTask);
 
-        startingTask.ContinueWith(
-            _ => RunMainTask(),
-            TaskContinuationOptions.OnlyOnRanToCompletion);
+        Task.Run(MainTask);
 
-        startingTask.ContinueWith(
-            task => LogErrorsForTask(task, "starting task"),
-            TaskContinuationOptions.OnlyOnFaulted);
-    }
-
-    public void Stop()
-    {
-        Console.WriteLine("Stopping SpeechRecognizer...");
-        if (state != RecognizerState.Running)
-            throw new InvalidOperationException("Speech recognizer not initialized");
-
-        state = RecognizerState.Stopping;
-
-        waveIn.StopRecording();
-        waveIn.DataAvailable -= OnDataAvailable!;
-
-        Console.WriteLine("Marking streaming call as completed");
-        stoppingTask = Task.Run(CreateStoppingTask);
-
-        stoppingTask.ContinueWith(
-            task => LogErrorsForTask(task, "stopping task"),
-            TaskContinuationOptions.OnlyOnFaulted);
-
-        stoppingTask.ContinueWith(
-            task => Console.WriteLine("Streaming call marked as completed"),
-            TaskContinuationOptions.OnlyOnRanToCompletion);
-
-        stoppingTask.ContinueWith(_ => watch.Stop());
+        state = RecognizerState.Running;
     }
 
 
     public void Dispose()
     {
-        Stop();
+        streamingCall.WriteCompleteAsync().ContinueWith(
+            _ => Task.Run(streamingCall.Dispose)
+        );
         waveIn.Dispose();
     }
 
@@ -116,20 +78,8 @@ public class SpeechRecognizer : IDisposable
 
     public bool TryGetNextResult([MaybeNullWhen(false)] out SpeechSentence sentence) => resultQueue.TryDequeue(out sentence);
 
-    private async Task CreateStartingTask()
-    {
-        Console.WriteLine("Performing asynchronous initialization");
-        state = RecognizerState.Starting;
-        await InitializeStreamingCall();
-
-        Console.WriteLine("SpeechRecognizer started");
-    }
-
     private async Task InitializeStreamingCall()
     {
-        
-
-        streamingCall = speech.StreamingRecognize();
         StreamingRecognizeRequest request = new()
         {
             StreamingConfig = new()
@@ -157,137 +107,37 @@ public class SpeechRecognizer : IDisposable
             },
             Recognizer = $"projects/{options.GcloudProjectId}/locations/global/recognizers/_"
         };
-        request.StreamingConfig.Config.LanguageCodes.Add("fr-fr");
-        request.StreamingConfig.Config.LanguageCodes.Add("en-us");
-
+        request.StreamingConfig.Config.LanguageCodes.AddRange(languages);
 
         await streamingCall.WriteAsync(request);
     }
 
-    private async Task CreateMainTask(CancellationTokenSource cancellationSource)
+    private async Task MainTask()
     {
-        CancellationToken cancellationToken = cancellationSource.Token;
+        Console.WriteLine("Performing asynchronous initialization");
+        state = RecognizerState.Starting;
+        await InitializeStreamingCall();
+
+        Console.WriteLine("SpeechRecognizer started");
+
 
         Console.WriteLine("Beginning of speech Api streaming call");
         streamingCallBeginning = watch.Elapsed;
 
-        SendCatchupRequestIfNeeded();
 
-        while (await MoveToNextResponse())
+        while (await streamingCall.GetResponseStream().MoveNextAsync())
         {
-            cancellationToken.ThrowIfCancellationRequested();
-
-            RepeatedField<StreamingRecognitionResult> results = streamingCall!.GetResponseStream().Current.Results;
+            RepeatedField<StreamingRecognitionResult> results = streamingCall.GetResponseStream().Current.Results;
             
             if (results.IsEmpty()) continue;
 
-            bool isResultFinal = HandleApiResult(results);
-            if (isResultFinal)
-                CancelTaskIfStreamingCallApproachesFromTimeout();
-        }
-        Console.WriteLine("Speech api streaming call ended ");
-
-        async Task<bool> MoveToNextResponse()
-        {
-            try
-            {
-                bool result = await streamingCall!.GetResponseStream().MoveNextAsync(cancellationToken);
-                return result;
-            }
-            catch (RpcException ex) when (ex.StatusCode == StatusCode.Cancelled)
-            {
-                throw new TaskCanceledException("Rpc call cancelled", ex);
-            }
-        }
-
-        void CancelTaskIfStreamingCallApproachesFromTimeout()
-        {
-            TimeSpan timeSinceStreamingCallRunning = watch.Elapsed - streamingCallBeginning;
-            if (timeSinceStreamingCallRunning > TimeSpan.FromSeconds(TimeoutFromWhichWeCanReset))
-                cancellationSource.Cancel();
-        }
-
-        void SendCatchupRequestIfNeeded()
-        {
-            lock (catchupLock)
-            {
-                if (catchupData.Any())
-                {
-                    byte[] data = Arrays.Merge(catchupData);
-                    SendRequestToSpeechApi(data);
-                    catchupData.Clear();
-                }
-            }
+            HandleApiResult(results);
         }
     }
 
-    private async Task CreateStoppingTask()
-    {
-        if (state == RecognizerState.Restarting)
-            await restartingTask!;
-
-        await streamingCall!.WriteCompleteAsync();
-        await mainTask!;
-    }
-
-    private async Task RestartMainTask()
-    {
-        Console.WriteLine("Restarting SpeechRecognizer to bypass googlespeech api 1 minute limitation");
-        state = RecognizerState.Restarting;
-
-        await InitializeStreamingCall();
-        RunMainTask();
-
-
-        Console.WriteLine("SpeechRecognizer restarded");
-    }
-
-    private void RunMainTask()
-    {
-        CancellationTokenSource source = new CancellationTokenSource();
-
-        mainTask = Task.Run(() => CreateMainTask(source));
-        source.CancelAfter(TimeSpan.FromSeconds(GoogleSpeechApiTimeout));
-
-        state = RecognizerState.Running;
-
-        mainTask.ContinueWith(
-            task =>
-            {
-                LogErrorsForTask(task, "mainTask");
-            },
-            TaskContinuationOptions.OnlyOnFaulted);
-
-        mainTask.ContinueWith(
-            _ => restartingTask = Task.Run(RestartMainTask),
-            TaskContinuationOptions.OnlyOnCanceled);
-
-        mainTask.ContinueWith(
-            _ => Console.WriteLine("SpeechRecognizer main task ran to completion"),
-            TaskContinuationOptions.OnlyOnRanToCompletion);
-    }
-
-
-    private void LogErrorsForTask(Task task, string taskName)
-    {
-        Console.Error.WriteLine($"Error on {taskName}");
-
-        if (task.Exception is null) return;
-
-        Console.Error.WriteLine(task.Exception.GetType().FullName);
-        Console.Error.WriteLine(task.Exception.Message);
-
-        foreach (Exception ex in task.Exception.InnerExceptions)
-        {
-            Console.Error.WriteLine($"\t{ex.GetType().FullName}");
-            Console.Error.WriteLine($"\t{ex.Message}");
-        }
-    }
-
-    private bool HandleApiResult(RepeatedField<StreamingRecognitionResult> results)
+    private void HandleApiResult(RepeatedField<StreamingRecognitionResult> results)
     {
         SpeechSentence result;
-        bool isResultFinal;
 
         if (results.First().IsFinal)
         {
@@ -296,7 +146,7 @@ public class SpeechRecognizer : IDisposable
                 .Alternatives
                 .SingleOrDefault();
 
-            if (alternative is null) return false;
+            if (alternative is null) return;
 
             IReadOnlyCollection<Word> words = alternative
                 .Words
@@ -324,7 +174,6 @@ public class SpeechRecognizer : IDisposable
                 words, confidence, 
                 startTime, endTime
             );
-            isResultFinal = true;
 
             TerminateRecognitionSession();
         }
@@ -349,12 +198,9 @@ public class SpeechRecognizer : IDisposable
                 currentRecognitionId ?? throw new NullReferenceException(),
                 recognitionResults, 
                 currentRecognitionStartingTime ?? throw new NullReferenceException());
-
-            isResultFinal = false;
         }
 
         resultQueue.Enqueue(result);
-        return isResultFinal;
 
         void TerminateRecognitionSession()
         {
@@ -369,34 +215,12 @@ public class SpeechRecognizer : IDisposable
         }
     }
 
+    private const int WHOLE_ARRAY = -1;
     private void OnDataAvailable(object sender, WaveInEventArgs wiea)
     {
-        byte[] buffer = wiea.Buffer;
+        byte[] data = wiea.Buffer;
         int count = wiea.BytesRecorded;
 
-        if (state == RecognizerState.Running)
-        {
-            SendRequestToSpeechApi(wiea.Buffer, wiea.BytesRecorded);
-        }
-        else if (state == RecognizerState.Restarting)
-        {
-            lock (catchupLock)
-            {
-                if (buffer.Length == wiea.BytesRecorded)
-                    catchupData.Add(buffer);
-                else
-                {
-                    byte[] data = new byte[wiea.BytesRecorded];
-                    Array.Copy(buffer, data, count);
-                    catchupData.Add(data);
-                }
-            }
-        }
-    }
-
-    private const int WHOLE_ARRAY = -1;
-    private void SendRequestToSpeechApi(byte[] data, int count = WHOLE_ARRAY)
-    {
         ByteString audioContent = count == WHOLE_ARRAY ?
             ByteString.CopyFrom(data) :
             ByteString.CopyFrom(data, 0, count);
@@ -405,7 +229,7 @@ public class SpeechRecognizer : IDisposable
             Audio = audioContent,
         };
 
-        streamingCall!.WriteAsync(writeRequest);
+        streamingCall.TryWriteAsync(writeRequest);
     }
 
 
@@ -413,11 +237,12 @@ public class SpeechRecognizer : IDisposable
         string Credentials,
         string GcloudProjectId,
         int SampleRate,
-        int Device
+        int Device,
+        string Language
     );
     public static async Task<SpeechRecognizer> CreateAsync(SpeechRecognizerOptions options)
     {
-        (string credentials, string gcloudProjectId, int sampleRate, int device) = options;
+        (string credentials, string gcloudProjectId, int sampleRate, int device, string language) = options;
 
 
         SpeechClientBuilder clientBuilder = new()

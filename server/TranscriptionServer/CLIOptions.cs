@@ -28,4 +28,7 @@ public class CLIOptions
 
     [Option('a', "ip", Required = false, Default = "127.0.0.1", HelpText = "IP for OSC server and client.")]
     public required string IPAddress { get; set; }
+
+    [Option('l', "language", Required = false, Default = "en-us", HelpText = "Language for speech recognition")]
+    public required string Language { get; set; }
 }

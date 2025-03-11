@@ -9,6 +9,14 @@ namespace TranscriptionServer;
 public static class Utils
 {
     public static bool IsEmpty<T>(this IEnumerable<T> enumerable) => !enumerable.Any();
+
+    public static (IEnumerable<T> trueElts, IEnumerable<T> falseElts) Split<T>(this IEnumerable<T> elements, Func<T, bool> predicate)
+    {
+        IEnumerable<T> trueElts = elements.Where(predicate);
+        IEnumerable<T> falseElts = elements.Where(elt => !predicate(elt));
+
+        return (trueElts, falseElts);
+    }
 }
 
 public static class Arrays
