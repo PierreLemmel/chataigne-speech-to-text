@@ -8,7 +8,7 @@
     "hasInput": true,
     "hasOutput": true,
     "url": "https://github.com/PierreLemmel/chataigne-speech-to-text",
-    "downloadURL": "https://github.com/PierreLemmel/chataigne-speech-to-text/releases/download/Module/module-1.0.0.zip",
+    "downloadURL": "https://github.com/PierreLemmel/chataigne-speech-to-text/releases/download/Server/speech-to-text-server.zip",
 
     "hideDefaultParameters": [
         "autoRange",
